@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Wenamy Daily</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <span class="brand">Wenamy Daily</span>
+    <span class="status" id="status" role="status">Checking sign-in…</span>
+  </div>
+  <div class="signin" id="signin" hidden>
+    <h1>Sign in to tick tasks</h1>
+    <p id="signin-msg">Use the Google account that owns this tracker.</p>
+    <button class="btn" id="signin-btn">Sign in with Google</button>
+  </div>
+  <div id="app" hidden></div>
+  <div id="foot" hidden style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">
+    <a href="report.html">Open the weekly report</a>
+    <button class="link" id="signout-btn" style="font-size:14px">Sign out</button>
+  </div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

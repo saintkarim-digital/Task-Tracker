@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == 'saintkarimdigital@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    // Daily ticks: private to the owner.
+    match /days/{day} { allow read, write: if isOwner(); }
+    match /config/{doc} { allow read, write: if isOwner(); }
+    // Weekly totals: anyone with the report link can read, only the owner can write.
+    match /weeks/{week} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+  }
+}
