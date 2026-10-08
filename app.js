@@ -8,8 +8,8 @@ import { collection, doc, getDoc, setDoc, onSnapshot, query, where }
 
 const TASKS = [
   { id: "social", name: "Social posts", sub: "Each post goes on Facebook, Instagram and TikTok. 3 is the goal; you can tick up to 10.", target: 10, goal: 3, unit: "post" },
-  { id: "jiji", name: "Jiji listings", sub: "Properties on jiji.com.gh. 5 is the goal; you can tick up to 10.", target: 10, goal: 5, unit: "listing" },
-  { id: "website", name: "Off-plan page", sub: "Properties on the Wenamy website off-plan page. 5 is the goal; you can tick up to 10.", target: 10, goal: 5, unit: "property" },
+  { id: "jiji", name: "Jiji listings", sub: "Properties on jiji.com.gh. 5 is the goal; you can tick up to 20.", target: 20, goal: 5, unit: "listing" },
+  { id: "website", name: "Off-plan page", sub: "Properties on the Wenamy website off-plan page. 5 is the goal; you can tick up to 20.", target: 20, goal: 5, unit: "property" },
   { id: "meqasa", name: "Meqasa listings", sub: "5 properties on meqasa.com.", target: 5, unit: "listing" }
 ];
 const LINK_TYPES = { jiji: "Jiji", website: "Website", social: "Social", other: "Other" };
@@ -17,10 +17,11 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// One-time starting data: Jiji ads posted on 7 and 8 Oct 2026, before this app existed.
+// Starting data for 7 and 8 Oct 2026. Counts only ever go up, and missing links are added,
+// so this never undoes anything ticked in the app.
 const J = "https://jiji.com.gh/accra-metropolitan/houses-apartments-for-sale/";
 const SEEDS = [{
-  date: "2026-10-07", jiji: 5,
+  date: "2026-10-07", jiji: 5, website: 5,
   links: [
     { type: "jiji", label: "7-bedroom mansion", url: J + "7bdrm-mansion-in-accra-metropolitan-for-sale-BWAsVLXr21kHR2dKooKfmYi1.html" },
     { type: "jiji", label: "2-bedroom bungalow", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-zPre9uvsvgmJjdIxGAPn7EjF.html" },
@@ -29,10 +30,14 @@ const SEEDS = [{
     { type: "jiji", label: "8-bedroom villa", url: J + "8bdrm-villa-in-accra-metropolitan-for-sale-m72tSHkwjp8sPPJRzXcSWrx8.html" }
   ]
 }, {
-  date: "2026-10-08", jiji: 2,
+  date: "2026-10-08", jiji: 6, website: 11,
   links: [
     { type: "jiji", label: "2-bedroom courtyard bungalow", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-3CkucC8kz7c2LcHmndfJ2BaQ.html" },
-    { type: "jiji", label: "3-bedroom curved-frame bungalow", url: J + "3bdrm-bungalow-in-accra-metropolitan-for-sale-7JKuuRbYA7zZ3RzjvLkS9WJY.html" }
+    { type: "jiji", label: "3-bedroom curved-frame bungalow", url: J + "3bdrm-bungalow-in-accra-metropolitan-for-sale-7JKuuRbYA7zZ3RzjvLkS9WJY.html" },
+    { type: "jiji", label: "2-bedroom flat-roof bungalow with pool", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-uP99PyFdnwMYtSIyKQZ5Akjj.html" },
+    { type: "jiji", label: "3-bedroom hip-roof bungalow", url: J + "3bdrm-bungalow-in-accra-metropolitan-for-sale-Bok2JsnmgdcdwhEWQZMGOHte.html" },
+    { type: "jiji", label: "2-bedroom bungalow with glass terrace", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-xcckRX7oVmxWTCJ6Ea0iIVqR.html" },
+    { type: "jiji", label: "4-bedroom classical duplex", url: J + "4bdrm-duplex-in-accra-metropolitan-for-sale-gkK8bShv4Uhfv7NBKrygmjq8.html" }
   ]
 }];
 
@@ -214,9 +219,19 @@ async function seedOnce() {
     try {
       const ref = doc(db, "days", seed.date);
       const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await setDoc(ref, Object.assign({}, seed, { updatedAt: new Date().toISOString() }));
-        S.days[seed.date] = Object.assign({}, seed);
+      const cur = snap.exists() ? snap.data() : { date: seed.date };
+      const next = Object.assign({}, cur);
+      let changed = !snap.exists();
+      ["social", "jiji", "website", "meqasa"].forEach(k => {
+        if ((+seed[k] || 0) > (+cur[k] || 0)) { next[k] = seed[k]; changed = true; }
+      });
+      const have = new Set((cur.links || []).map(l => l.url));
+      const add = (seed.links || []).filter(l => !have.has(l.url));
+      if (add.length) { next.links = (cur.links || []).concat(add); changed = true; }
+      if (changed) {
+        next.date = seed.date; next.updatedAt = new Date().toISOString();
+        await setDoc(ref, next);
+        S.days[seed.date] = next;
         await setDoc(doc(db, "reports", seed.date), daySummary(seed.date));
       }
     } catch (e) { /* seeding is a convenience; ticking still works without it */ }
