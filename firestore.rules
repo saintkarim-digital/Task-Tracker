@@ -9,8 +9,8 @@ service cloud.firestore {
     // Daily ticks: private to the owner.
     match /days/{day} { allow read, write: if isOwner(); }
     match /config/{doc} { allow read, write: if isOwner(); }
-    // Weekly totals: anyone with the report link can read, only the owner can write.
-    match /weeks/{week} {
+    // Daily summaries: anyone with the report link can read, only the owner can write.
+    match /reports/{day} {
       allow read: if true;
       allow write: if isOwner();
     }

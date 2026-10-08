@@ -1,5 +1,5 @@
 // Wenamy Daily: the owner's tracker. Daily ticks live in "days" (private).
-// Every save also rewrites that week's totals in "weeks", which the report page reads.
+// Every save also writes that day's public summary to "reports", which the report page reads.
 import { app, db, OWNER } from "./firebase.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
@@ -7,9 +7,9 @@ import { collection, doc, getDoc, setDoc, onSnapshot, query, where }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const TASKS = [
-  { id: "social", name: "Social posts", sub: "Each post goes on Facebook, Instagram and TikTok. 2 is the minimum, 3 is the goal.", target: 3, min: 2, unit: "post" },
-  { id: "jiji", name: "Jiji listings", sub: "5 properties on jiji.com.gh.", target: 5, unit: "listing" },
-  { id: "website", name: "Off-plan page", sub: "5 properties on the Wenamy website off-plan page.", target: 5, unit: "property" },
+  { id: "social", name: "Social posts", sub: "Each post goes on Facebook, Instagram and TikTok. 3 is the goal; you can tick up to 10.", target: 10, goal: 3, unit: "post" },
+  { id: "jiji", name: "Jiji listings", sub: "Properties on jiji.com.gh. 5 is the goal; you can tick up to 10.", target: 10, goal: 5, unit: "listing" },
+  { id: "website", name: "Off-plan page", sub: "Properties on the Wenamy website off-plan page. 5 is the goal; you can tick up to 10.", target: 10, goal: 5, unit: "property" },
   { id: "meqasa", name: "Meqasa listings", sub: "5 properties on meqasa.com.", target: 5, unit: "listing" }
 ];
 const LINK_TYPES = { jiji: "Jiji", website: "Website", social: "Social", other: "Other" };
@@ -17,11 +17,10 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// One-time starting data: the five Jiji ads posted on 7 Oct 2026, before this app existed.
-const SEED_DAY = "2026-10-07";
+// One-time starting data: Jiji ads posted on 7 and 8 Oct 2026, before this app existed.
 const J = "https://jiji.com.gh/accra-metropolitan/houses-apartments-for-sale/";
-const SEED = {
-  date: SEED_DAY, jiji: 5,
+const SEEDS = [{
+  date: "2026-10-07", jiji: 5,
   links: [
     { type: "jiji", label: "7-bedroom mansion", url: J + "7bdrm-mansion-in-accra-metropolitan-for-sale-BWAsVLXr21kHR2dKooKfmYi1.html" },
     { type: "jiji", label: "2-bedroom bungalow", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-zPre9uvsvgmJjdIxGAPn7EjF.html" },
@@ -29,7 +28,13 @@ const SEED = {
     { type: "jiji", label: "6-bedroom villa duplex", url: J + "6bdrm-duplex-in-accra-metropolitan-for-sale-kHeXc1jxZurGHRaWHDlPXD8W.html" },
     { type: "jiji", label: "8-bedroom villa", url: J + "8bdrm-villa-in-accra-metropolitan-for-sale-m72tSHkwjp8sPPJRzXcSWrx8.html" }
   ]
-};
+}, {
+  date: "2026-10-08", jiji: 2,
+  links: [
+    { type: "jiji", label: "2-bedroom courtyard bungalow", url: J + "2bdrm-bungalow-in-accra-metropolitan-for-sale-3CkucC8kz7c2LcHmndfJ2BaQ.html" },
+    { type: "jiji", label: "3-bedroom curved-frame bungalow", url: J + "3bdrm-bungalow-in-accra-metropolitan-for-sale-7JKuuRbYA7zZ3RzjvLkS9WJY.html" }
+  ]
+}];
 
 const ymd = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 const parse = s => { const p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); };
@@ -49,7 +54,7 @@ const setStatus = (t, bad) => { statusEl.textContent = t; statusEl.className = "
 
 const day = d => S.days[d] || {};
 const active = () => TASKS.filter(t => !S.paused.includes(t.id));
-const need = t => t.min || t.target;
+const need = t => t.goal || t.target;
 function progress(d) {
   let got = 0, tot = 0; const x = day(d);
   active().forEach(t => { tot += need(t); got += Math.min(+x[t.id] || 0, need(t)); });
@@ -66,17 +71,11 @@ function smsDay(d) {
   for (let i = 0; i < 7; i++) { const k = shift(w, i); if (day(k).sms) return k; }
   return null;
 }
-// Totals for one Monday-to-Sunday week. This is all the report page ever sees.
-function weekSummary(ws) {
-  const out = { weekStart: ws, weekEnd: shift(ws, 6), social: 0, jiji: 0, website: 0, meqasa: 0, sms: false, daysWorked: 0, links: [] };
-  for (let i = 0; i < 7; i++) {
-    const k = shift(ws, i), x = day(k);
-    let any = false;
-    TASKS.forEach(t => { const n = +x[t.id] || 0; out[t.id] += n; if (n) any = true; });
-    if (x.sms) { out.sms = true; any = true; }
-    if (any) out.daysWorked++;
-    (x.links || []).forEach(l => { if (safeUrl(l.url)) out.links.push({ type: l.type, label: l.label || "", url: l.url, date: k }); });
-  }
+// One day's public summary. This is all the report page ever sees.
+function daySummary(d) {
+  const x = day(d), out = { date: d, sms: !!x.sms, links: [] };
+  TASKS.forEach(t => { out[t.id] = +x[t.id] || 0; });
+  (x.links || []).forEach(l => { if (safeUrl(l.url)) out.links.push({ type: l.type, label: l.label || "", url: l.url }); });
   out.updatedAt = new Date().toISOString();
   return out;
 }
@@ -110,10 +109,10 @@ function render() {
     '<button class="sms-btn' + (mine ? " on" : "") + '" id="sms" aria-pressed="' + mine + '">' + (mine ? "Sent on this day" : "Mark as sent on this day") + "</button></section>";
   h += "</div>";
 
-  // Links that will appear on the weekly report
+  // Links that will appear on the daily report
   const links = x.links || [];
   h += '<div class="panel"><section class="task"><div class="task-head"><h2>Links for the report</h2><span class="chip">' + links.length + '</span></div>' +
-    '<p class="sub">Paste the live ad or post so the weekly report can link to it.</p>';
+    '<p class="sub">Paste the live ad or post so the daily report can link to it.</p>';
   if (links.length) {
     h += '<ul class="linklist">';
     links.forEach((l, i) => {
@@ -152,15 +151,14 @@ function touch(d) {
 }
 async function flush() {
   if (saving) return;
-  saving = true; let ok = true; const weeks = new Set();
+  saving = true; let ok = true;
   try {
     while (dirty.size) {
       const d = dirty.values().next().value; dirty.delete(d); inflight = d;
       await setDoc(doc(db, "days", d), Object.assign({}, S.days[d], { date: d, updatedAt: new Date().toISOString() }));
-      weeks.add(weekStart(d));
+      await setDoc(doc(db, "reports", d), daySummary(d));
     }
     inflight = null;
-    for (const w of weeks) await setDoc(doc(db, "weeks", w), weekSummary(w));
   } catch (e) {
     ok = false; if (inflight) dirty.add(inflight); inflight = null;
     setStatus(e && e.code === "permission-denied" ? "This account can't save. Sign in as the owner." : "Could not save. Check your connection, then tick again.", true);
@@ -172,8 +170,6 @@ async function saveSettings() {
   setStatus("Saving…");
   try {
     await setDoc(doc(db, "config", "settings"), { paused: S.paused });
-    // Pausing changes nothing in the totals, but keep this week's report fresh.
-    await setDoc(doc(db, "weeks", weekStart(today)), weekSummary(weekStart(today)));
     setStatus("Saved");
   } catch (e) { setStatus("Could not save that change.", true); }
 }
@@ -214,15 +210,18 @@ appEl.addEventListener("submit", e => {
 });
 
 async function seedOnce() {
-  try {
-    const ref = doc(db, "days", SEED_DAY);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, Object.assign({}, SEED, { updatedAt: new Date().toISOString() }));
-      S.days[SEED_DAY] = Object.assign({}, SEED);
-      await setDoc(doc(db, "weeks", weekStart(SEED_DAY)), weekSummary(weekStart(SEED_DAY)));
-    }
-  } catch (e) { /* seeding is a convenience; ticking still works without it */ }
+  for (const seed of SEEDS) {
+    try {
+      const ref = doc(db, "days", seed.date);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, Object.assign({}, seed, { updatedAt: new Date().toISOString() }));
+        S.days[seed.date] = Object.assign({}, seed);
+        await setDoc(doc(db, "reports", seed.date), daySummary(seed.date));
+      }
+    } catch (e) { /* seeding is a convenience; ticking still works without it */ }
+  }
+  render();
 }
 
 function start() {
